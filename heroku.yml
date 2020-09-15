@@ -1,5 +1,5 @@
 build:
   docker:
-    worker: Dockerfile
+    web: Dockerfile
 run:
-  worker: bash /root/start.sh
+  web: bash /root/start.sh
