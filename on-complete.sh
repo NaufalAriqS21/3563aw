@@ -1,99 +1,175 @@
-#!/bin/bash
-#=================================================
+#!/usr/bin/env bash
+#============================================================
+# https://github.com/P3TERX/aria2.conf
+# File name：autoupload.sh
 # Description: Aria2 download completes calling Rclone upload
 # Lisence: MIT
-# Version: 1.8
+# Version: 2.0
 # Author: P3TERX
 # Blog: https://p3terx.com
-#=================================================
+#============================================================
 
+## 基础设置 ##
+
+# Rclone 配置时填写的网盘名(name)
+DRIVE_NAME="$RCLONE_DESTINATION"
+
+# 网盘目录。即上传目标路径，留空为网盘根目录，末尾不要有斜杠。
+DRIVE_PATH=''
+
+# Aria2下载目录
+# Aria2 一键安装管理脚本使用选项统一进行修改。
+# Aria2 Pro Docker 镜像无需修改，通过目录映射进行设置。
+DOWNLOAD_PATH='downloads'
+
+## 文件过滤 ##
+
+# 限制最低上传大小，仅 BT 多文件下载时有效，用于过滤无用文件。低于此大小的文件将被删除，不会上传。
+#MIN_SIZE=10m
+
+# 保留文件类型，仅 BT 多文件下载时有效，用于过滤无用文件。其它文件将被删除，不会上传。
+#INCLUDE_FILE='mp4,mkv,rmvb,mov'
+
+# 排除文件类型，仅 BT 多文件下载时有效，用于过滤无用文件。排除的文件将被删除，不会上传。
+#EXCLUDE_FILE='html,url,lnk,txt,jpg,png'
+
+## 高级设置 ##
+
+# RCLONE 配置文件路径
 export RCLONE_CONFIG=rclone.conf
 
-downloadpath='downloads' #Aria2下载目录
-name="$RCLONE_DESTINATION" #配置Rclone时填写的name
-folder='' #网盘里的文件夹，留空为整个网盘。
-retry_num=3 #上传失败重试次数
+# RCLONE 配置文件密码
+#export RCLONE_CONFIG_PASS=password
 
-#=================下面不需要修改===================
-filepath=$3 #Aria2传递给脚本的文件路径。BT下载有多个文件时该值为文件夹内第一个文件，如/root/Download/a/b/1.mp4
-folderpath=`dirname "$filepath"`
-rdp=${filepath#${downloadpath}/} #路径转换，去掉开头的下载路径。
-rfp=${folderpath#${downloadpath}/}
-path=${downloadpath}/${rdp%%/*} #路径转换。下载文件夹时为顶层文件夹路径，普通单文件下载时与文件路径相同。
+# RCLONE 并行上传文件数，仅对单个任务有效。
+#export RCLONE_TRANSFERS=4
+
+# RCLONE 块的大小，默认5M，理论上是越大上传速度越快，同时占用内存也越多。如果设置得太大，可能会导致进程中断。
+#export RCLONE_CACHE_CHUNK_SIZE=5M
+
+# RCLONE 块可以在本地磁盘上占用的总大小，默认10G。
+#export RCLONE_CACHE_CHUNK_TOTAL_SIZE=10G
+
+# RCLONE 上传失败重试次数，默认 3
+#export RCLONE_RETRIES=3
+
+# RCLONE 上传失败重试等待时间，默认禁用，单位 s, m, h
+export RCLONE_RETRIES_SLEEP=30s
+
+# RCLONE 异常退出重试次数
+RETRY_NUM=3
+
+#============================================================
+
+FILE_PATH=$3                                          # Aria2传递给脚本的文件路径。BT下载有多个文件时该值为文件夹内第一个文件，如/root/Download/a/b/1.mp4
+REMOVE_DOWNLOAD_PATH=${FILE_PATH#${DOWNLOAD_PATH}/}   # 路径转换，去掉开头的下载路径。
+TOP_PATH=${DOWNLOAD_PATH}/${REMOVE_DOWNLOAD_PATH%%/*} # 路径转换，BT下载文件夹时为顶层文件夹路径，普通单文件下载时与文件路径相同。
+RED_FONT_PREFIX="\033[31m"
+LIGHT_GREEN_FONT_PREFIX="\033[1;32m"
 YELLOW_FONT_PREFIX="\033[1;33m"
 LIGHT_PURPLE_FONT_PREFIX="\033[1;35m"
 FONT_COLOR_SUFFIX="\033[0m"
+INFO="[${LIGHT_GREEN_FONT_PREFIX}INFO${FONT_COLOR_SUFFIX}]"
+ERROR="[${RED_FONT_PREFIX}ERROR${FONT_COLOR_SUFFIX}]"
+WARRING="[${YELLOW_FONT_PREFIX}WARRING${FONT_COLOR_SUFFIX}]"
 
-Task_INFO(){
+TASK_INFO() {
     echo -e "
 -------------------------- [${YELLOW_FONT_PREFIX}TASK INFO${FONT_COLOR_SUFFIX}] --------------------------
-${LIGHT_PURPLE_FONT_PREFIX}Download path:${FONT_COLOR_SUFFIX} ${downloadpath}
-${LIGHT_PURPLE_FONT_PREFIX}File path:${FONT_COLOR_SUFFIX} ${filepath}
-${LIGHT_PURPLE_FONT_PREFIX}Upload path:${FONT_COLOR_SUFFIX} ${uploadpath}
-${LIGHT_PURPLE_FONT_PREFIX}Remote path:${FONT_COLOR_SUFFIX} ${remotepath}
+${LIGHT_PURPLE_FONT_PREFIX}Download path:${FONT_COLOR_SUFFIX} ${DOWNLOAD_PATH}
+${LIGHT_PURPLE_FONT_PREFIX}File path:${FONT_COLOR_SUFFIX} ${FILE_PATH}
+${LIGHT_PURPLE_FONT_PREFIX}Upload path:${FONT_COLOR_SUFFIX} ${UPLOAD_PATH}
+${LIGHT_PURPLE_FONT_PREFIX}Remote path:${FONT_COLOR_SUFFIX} ${REMOTE_PATH}
 -------------------------- [${YELLOW_FONT_PREFIX}TASK INFO${FONT_COLOR_SUFFIX}] --------------------------
 "
 }
 
-Upload(){
-    retry=0
-    while [ $retry -le $retry_num -a -e "${uploadpath}" ]; do
-        [ $retry != 0 ] && echo && echo -e "Upload failed! Retry ${retry}/${retry_num} ..." && echo
-        rclone move -v "${uploadpath}" "${remotepath}"
-        rclone rmdirs -v "${downloadpath}" --leave-root
-        retry=$(($retry+1))
-    if [[ $filepath == *"x265-RARBG"* ]]; then
-        TOKEN="1179874224:AAGhCpwuivaWrktVzIeZD8YmKUzBqsNTrdM"
-        ID="-1001321927996"
-        URL="https://api.telegram.org/bot$TOKEN/sendMessage"
-        URI="https://idfl:idfl@td.gdrive.info/${uploadpath#downloads/}/?rootId=0ADxzg8Euec8TUk9PVA"
-        TEXT="_______NEW_POST_______%0A<code>[CENTER][B][COLOR=#246092][SIZE=5]${uploadpath#downloads/RARBGx265/}[/SIZE][/COLOR][/B]%0A%0A[IMG]https://i.ibb.co/q7ZBV8d/Logo-Google-Drive-1.png[/IMG]%0A[code]%0A[URL=$URI]${uploadpath#downloads/RARBGx265/}[/URL]%0A%0AUser%26amp;Pass:idfl[/code][/CENTER]</code>%0A_______________________"
-        curl -d parse_mode="HTML" -d chat_id=$ID --data text=$TEXT --request POST $URL > /dev/null 2>&1
-    fi
-    done
-    [ -e "${uploadpath}" ] && echo && echo -e "Upload failed: ${uploadpath}" && echo
-    [ -e "${path}".aria2 ] && rm -vf "${path}".aria2
-    [ -e "${filepath}".aria2 ] && rm -vf "${filepath}".aria2
+CLEAN_UP() {
+    [[ -n ${MIN_SIZE} || -n ${INCLUDE_FILE} || -n ${EXCLUDE_FILE} ]] && echo -e "${INFO} Clean up excluded files ..."
+    [[ -n ${MIN_SIZE} ]] && rclone delete -v "${UPLOAD_PATH}" --max-size ${MIN_SIZE}
+    [[ -n ${INCLUDE_FILE} ]] && rclone delete -v "${UPLOAD_PATH}" --exclude "*.{${INCLUDE_FILE}}"
+    [[ -n ${EXCLUDE_FILE} ]] && rclone delete -v "${UPLOAD_PATH}" --include "*.{${EXCLUDE_FILE}}"
 }
 
-if [ $2 -eq 0 ]
-    then
-        exit 0
+UPLOAD_FILE() {
+    RETRY=0
+    while [ ${RETRY} -le ${RETRY_NUM} ]; do
+        [ ${RETRY} != 0 ] && (
+            echo
+            echo -e "$(date +"%m/%d %H:%M:%S") ${ERROR} Upload failed! Retry ${RETRY}/${RETRY_NUM} ..."
+            echo
+        )
+        rclone move -v "${UPLOAD_PATH}" "${REMOTE_PATH}"
+        RCLONE_EXIT_CODE=$?
+        if [ ${RCLONE_EXIT_CODE} -eq 0 ]; then
+            [ -e "${DOT_ARIA2_FILE}" ] && rm -vf "${DOT_ARIA2_FILE}"
+            rclone rmdirs -v "${DOWNLOAD_PATH}" --leave-root
+            echo -e "$(date +"%m/%d %H:%M:%S") ${INFO} Upload done: ${UPLOAD_PATH}"
+            break
+        else
+            RETRY=$((${RETRY} + 1))
+            [ ${RETRY} -gt ${RETRY_NUM} ] && (
+                echo
+                echo -e "$(date +"%m/%d %H:%M:%S") ${ERROR} Upload failed: ${UPLOAD_PATH}"
+                echo
+            )
+            sleep 3
+        fi
+    done
+}
+
+UPLOAD() {
+    echo -e "$(date +"%m/%d %H:%M:%S") ${INFO} Start upload..."
+    TASK_INFO
+    UPLOAD_FILE
+}
+
+if [ -z $2 ]; then
+    echo && echo -e "${ERROR} This script can only be used by passing parameters through Aria2."
+    echo && echo -e "${WARRING} 直接运行此脚本可能导致无法开机！"
+    exit 1
+elif [ $2 -eq 0 ]; then
+    exit 0
 fi
 
 echo
 echo -e "
-__________________________________
-  _   _       _                 _ 
- | | | |_ __ | | ___   __ _  __| |
- | | | | '_ \| |/ _ \ / _\` |/ _\` |
- | |_| | |_) | | (_) | (_| | (_| |
-  \___/| .__/|_|\___/ \__,_|\__,_|
-       |_|                        
-___________________________________
+-----------------------------------------------------------
+    _         _          _   _       _                 _ 
+   / \  _   _| |_ ___   | | | |_ __ | | ___   __ _  __| |
+  / _ \| | | | __/ _ \  | | | | '_ \| |/ _ \ / _\` |/ _\` |
+ / ___ \ |_| | || (_) | | |_| | |_) | | (_) | (_| | (_| |
+/_/   \_\__,_|\__\___/   \___/| .__/|_|\___/ \__,_|\__,_|
+                              |_|
+
+-----------------------------------------------------------
 "
 echo
 
-if [ "$path" = "$filepath" ] && [ $2 -eq 1 ] #普通单文件下载，移动文件到设定的网盘文件夹。
-    then
-        uploadpath=${filepath}
-        remotepath="${name}:${folder}"
-        Task_INFO
-        Upload
-        exit 0
-elif [ "$path" != "$filepath" ] && [ $2 -gt 1 ] #BT下载（文件夹内文件数大于1），移动整个文件夹到设定的网盘文件夹。
-    then
-        uploadpath=${folderpath}
-        remotepath="${name}:${folder}/${rfp}"
-        Task_INFO
-        Upload
-        exit 0
-elif [ "$path" != "$filepath" ] && [ $2 -eq 1 ] #第三方度盘工具下载（子文件夹或多级目录等情况下的单文件下载）、BT下载（文件夹内文件数等于1），移动文件到设定的网盘文件夹下的相同路径文件夹。
-    then
-        uploadpath=${filepath}
-        remotepath="${name}:${folder}/${rdp%/*}"
-        Task_INFO
-        Upload
-        exit 0
+if [ -e "${FILE_PATH}.aria2" ]; then
+    DOT_ARIA2_FILE="${FILE_PATH}.aria2"
+elif [ -e "${TOP_PATH}.aria2" ]; then
+    DOT_ARIA2_FILE="${TOP_PATH}.aria2"
 fi
-Task_INFO
+
+if [ "${TOP_PATH}" = "${FILE_PATH}" ] && [ $2 -eq 1 ]; then # 普通单文件下载，移动文件到设定的网盘文件夹。
+    UPLOAD_PATH="${FILE_PATH}"
+    REMOTE_PATH="${DRIVE_NAME}:${DRIVE_PATH}"
+    UPLOAD
+    exit 0
+elif [ "${TOP_PATH}" != "${FILE_PATH}" ] && [ $2 -gt 1 ]; then # BT下载（文件夹内文件数大于1），移动整个文件夹到设定的网盘文件夹。
+    UPLOAD_PATH="${TOP_PATH}"
+    REMOTE_PATH="${DRIVE_NAME}:${DRIVE_PATH}/${REMOVE_DOWNLOAD_PATH%%/*}"
+    CLEAN_UP
+    UPLOAD
+    exit 0
+elif [ "${TOP_PATH}" != "${FILE_PATH}" ] && [ $2 -eq 1 ]; then # 第三方度盘工具下载（子文件夹或多级目录等情况下的单文件下载）、BT下载（文件夹内文件数等于1），移动文件到设定的网盘文件夹下的相同路径文件夹。
+    UPLOAD_PATH="${FILE_PATH}"
+    REMOTE_PATH="${DRIVE_NAME}:${DRIVE_PATH}/${REMOVE_DOWNLOAD_PATH%/*}"
+    UPLOAD
+    exit 0
+fi
+
+echo -e "${ERROR} Unknown error."
+TASK_INFO
+exit 1
