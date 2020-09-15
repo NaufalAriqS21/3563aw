@@ -1,7 +1,7 @@
 {
 	"name": "Heroku aria2c",
 	"description": "Run aria2c on heroku",
-	"repository": "https://github.com/MrRobotGOD/heroku-aria2c",
+	"repository": "https://github.com/alamia442/herokuariangdocker",
 	"keywords": ["aria2c"],
 	"env": {
 		"HEROKU_APP_NAME": {
@@ -19,9 +19,5 @@
 			"required": false
 		}
 	},
-	"buildpacks": [
-		{
-			"url": "heroku/nodejs"
-		}
-	]
+  "stack": "container"
 }
