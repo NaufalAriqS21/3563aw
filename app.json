@@ -1,0 +1,27 @@
+{
+	"name": "Heroku aria2c",
+	"description": "Run aria2c on heroku",
+	"repository": "https://github.com/MrRobotGOD/heroku-aria2c",
+	"keywords": ["aria2c"],
+	"env": {
+		"HEROKU_APP_NAME": {
+			"description": "This should be the same as \"App name\" above."
+		},
+		"ARIA2C_SECRET": {
+			"description": "Aria2c's secret",
+			"value": "DEFAULT_SECRET"
+		},
+		"RCLONE_CONFIG_BASE64": {
+			"description": "Put the Base64 encoded rclone conf"
+		},
+		"RCLONE_DESTINATION": {
+			"description": "Path to store your file in your Rclone drive. Must start with a forward slash.",
+			"required": false
+		}
+	},
+	"buildpacks": [
+		{
+			"url": "heroku/nodejs"
+		}
+	]
+}
